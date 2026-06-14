@@ -76,7 +76,7 @@ h2.sec{font-size:26px;margin:0 0 6px}
 <input id="aiq" type="text" placeholder="e.g. vegan vitamin C serum, US-based, low minimum">
 <button class="btn" type="submit">Ask</button>
 </form>
-<p class="note" id="ainote" style="text-align:left">Powered by AI over the live directory. Free to try.</p>
+<p class="note" id="ainote" style="text-align:left">Pro feature, $19/month. Ask a question to see a free taste, then unlock full answers.</p>
 <div id="aiout"></div>
 </div></section>
 
@@ -131,7 +131,7 @@ function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replac
 function opt(sel,v){const o=document.createElement('option');o.value=v;o.textContent=v;sel.appendChild(o)}
 [...new Set(SUPPLIERS.map(s=>s.type))].sort().forEach(v=>opt(ft,v));
 [...new Set(SUPPLIERS.map(s=>s.region))].sort().forEach(v=>opt(fr,v));
-function card(s){return '<article class="card"><div class="row1"><h3>'+esc(s.name)+'</h3><span class="badge">'+esc(s.type)+'</span></div><div class="region">'+esc(s.hq)+'</div><p class="cats">'+esc(s.cats)+'</p><p class="kv"><b>MOQ:</b> '+esc(s.moq)+'</p><p class="kv"><b>Certifications:</b> '+esc(s.certs)+'</p><div class="src"><a href="'+esc(s.source)+'" target="_blank" rel="noopener">View source &#8599;</a></div></article>'}
+function card(s){return '<article class="card"><div class="row1"><h3>'+esc(s.name)+'</h3><span class="badge">'+esc(s.type)+'</span></div><div class="region">'+esc(s.hq)+'</div><p class="cats">'+esc(s.cats)+'</p><p class="kv"><b>MOQ:</b> '+esc(s.moq)+'</p><p class="kv"><b>Certifications:</b> '+esc(s.certs)+'</p><div class="src"><a href="'+esc(s.source)+'" target="_blank" rel="noopener">View source &#8599;</a></div><button class="btn ghost dr" data-n="'+esc(s.name)+'" data-s="'+esc(s.source)+'" style="margin-top:8px;font-size:13px;padding:8px 12px;width:100%">Deep research (Pro)</button></article>'}
 function apply(){const t=q.value.toLowerCase().trim();const ty=ft.value,rg=fr.value,ct=fc.value,low=fl.checked;
  const out=SUPPLIERS.filter(s=>{
   if(ty&&s.type!==ty)return false;
@@ -151,25 +151,92 @@ document.getElementById('optin').addEventListener('submit',function(e){e.prevent
 </script>
 <script>
 (function(){
+ var GOPRO="__CHECKOUT_URL__";
  var f=document.getElementById('aiform'),q=document.getElementById('aiq'),out=document.getElementById('aiout');
  if(!f) return;
  function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+ function getKey(){ try{return localStorage.getItem('is_pro_key')||'';}catch(e){return '';} }
+ function setKey(k){ try{localStorage.setItem('is_pro_key',k);}catch(e){} }
+ function cards(picks){ if(!picks||!picks.length) return ''; return '<div class="grid" style="margin-top:14px">'+picks.map(function(s){return '<article class="card"><div class="row1"><h3>'+esc(s.name)+'</h3><span class="badge">'+esc(s.type)+'</span></div><div class="region">'+esc(s.hq)+'</div><p class="kv"><b>MOQ:</b> '+esc(s.moq)+'</p><p class="kv"><b>Certifications:</b> '+esc(s.certs)+'</p><div class="src"><a href="'+esc(s.source)+'" target="_blank" rel="noopener">View source &#8599;</a></div><button class="btn ghost dr" data-n="'+esc(s.name)+'" data-s="'+esc(s.source)+'" style="margin-top:8px;font-size:13px;padding:8px 12px;width:100%">Deep research (Pro)</button></article>';}).join('')+'</div>'; }
+ function proBox(){
+  return '<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-top:6px">'
+   +'<strong>Unlock the AI sourcing assistant &mdash; Pro, $19/month.</strong><br>Tailored supplier picks and reasoning for any request.'
+   +'<div style="margin-top:10px"><a class="btn" href="'+esc(GOPRO)+'" target="_blank" rel="noopener">Go Pro</a> '
+   +'<a href="#" id="havekey" style="margin-left:12px">I already have a key</a></div>'
+   +'<div id="keybox" style="display:none;margin-top:10px"><input id="prokey" type="text" placeholder="Paste your Pro license key" style="padding:10px 12px;border:1px solid var(--line);border-radius:9px;width:60%;min-width:200px"> <button class="btn ghost" id="activate" type="button">Activate</button> <div id="keymsg" class="subt" style="margin-top:6px"></div></div>'
+   +'</div>';
+ }
+ function wire(){
+  var hk=document.getElementById('havekey');
+  if(hk) hk.addEventListener('click',function(e){e.preventDefault();var kb=document.getElementById('keybox');if(kb)kb.style.display='block';});
+  var act=document.getElementById('activate');
+  if(act) act.addEventListener('click',function(){
+   var k=(document.getElementById('prokey').value||'').trim();var msg=document.getElementById('keymsg');
+   if(!k){msg.textContent='Paste your key first.';return;}
+   msg.textContent='Checking...';
+   fetch('/.netlify/functions/concierge',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({validateOnly:true,license:k})})
+    .then(function(r){return r.json();})
+    .then(function(v){ if(v&&v.valid){setKey(k);msg.textContent='Activated. Ask your question above.';}else{msg.textContent='That key did not validate. Check it and try again.';} })
+    .catch(function(){msg.textContent='Could not check the key right now. Try again.';});
+  });
+ }
  function render(d){
-  var h='<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;white-space:pre-wrap;line-height:1.6;margin-top:6px">'+esc(d.answer)+'</div>';
-  if(d.picks&&d.picks.length){
-   h+='<div class="grid" style="margin-top:14px">'+d.picks.map(function(s){return '<article class="card"><div class="row1"><h3>'+esc(s.name)+'</h3><span class="badge">'+esc(s.type)+'</span></div><div class="region">'+esc(s.hq)+'</div><p class="kv"><b>MOQ:</b> '+esc(s.moq)+'</p><p class="kv"><b>Certifications:</b> '+esc(s.certs)+'</p><div class="src"><a href="'+esc(s.source)+'" target="_blank" rel="noopener">View source &#8599;</a></div></article>';}).join('')+'</div>';
+  var h='';
+  if(d.needsPro){
+   h=proBox();
+   if(d.picks&&d.picks.length){ h+='<p class="subt" style="margin-top:12px">A free taste &mdash; three of the closest matches:</p>'+cards(d.picks); }
+  } else {
+   h='<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;white-space:pre-wrap;line-height:1.6;margin-top:6px">'+esc(d.answer)+'</div>'+cards(d.picks);
   }
-  out.innerHTML=h;
+  out.innerHTML=h; wire();
  }
  f.addEventListener('submit',function(e){
-  e.preventDefault();
-  var query=q.value.trim(); if(!query) return;
-  out.innerHTML='<p class="subt" style="margin-top:10px">Searching 139 suppliers&hellip;</p>';
-  fetch('/.netlify/functions/concierge',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:query})})
-   .then(function(r){ if(!r.ok) throw new Error('http'); return r.json(); })
+  e.preventDefault();var query=q.value.trim();if(!query) return;
+  out.innerHTML='<p class="subt" style="margin-top:10px">Searching 139 suppliers...</p>';
+  fetch('/.netlify/functions/concierge',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:query,license:getKey()})})
+   .then(function(r){if(!r.ok)throw new Error('http');return r.json();})
    .then(render)
-   .catch(function(){ out.innerHTML='<p class="subt" style="margin-top:10px">The AI assistant runs once your site is deployed on Netlify with an API key (see AI-CONCIERGE-SETUP). It can\'t run from a local file opened directly.</p>'; });
+   .catch(function(){ out.innerHTML='<p class="subt" style="margin-top:10px">Something went wrong. If you just deployed, give it a minute and try again.</p>'; });
  });
+})();
+</script>
+
+<div id="drmodal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:50;padding:16px;overflow:auto">
+ <div style="max-width:680px;margin:40px auto;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px;position:relative">
+  <button id="drclose" type="button" aria-label="Close" style="position:absolute;top:10px;right:14px;border:0;background:none;font-size:22px;line-height:1;cursor:pointer;color:var(--mut)">&times;</button>
+  <h3 id="drtitle" style="margin:0 24px 12px 0;color:var(--berry);font-size:20px"></h3>
+  <div id="drbody"></div>
+ </div>
+</div>
+<script>
+(function(){
+ var GOPRO="__CHECKOUT_URL__";
+ var modal=document.getElementById('drmodal'),title=document.getElementById('drtitle'),body=document.getElementById('drbody');
+ if(!modal) return;
+ function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+ function key(){try{return localStorage.getItem('is_pro_key')||'';}catch(e){return '';}}
+ function setKey(k){try{localStorage.setItem('is_pro_key',k);}catch(e){}}
+ function md(t){var x=esc(t);x=x.replace(/^\s*#{1,6}\s*(.+)$/gm,'<div style="font-weight:500;color:var(--berry);margin:13px 0 3px">$1</div>');x=x.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');return x.replace(/\n/g,'<br>');}
+ function upsell(){return '<p>Deep supplier research is a <strong>Pro</strong> feature ($19/month) - a full brief on any supplier, on demand.</p><div style="margin-top:12px"><a class="btn" href="'+esc(GOPRO)+'" target="_blank" rel="noopener">Go Pro</a> <a href="#" id="drhk" style="margin-left:12px">I already have a key</a></div><div id="drkb" style="display:none;margin-top:10px"><input id="drkey" type="text" placeholder="Paste your Pro license key" style="padding:10px 12px;border:1px solid var(--line);border-radius:9px;width:60%;min-width:200px"> <button class="btn ghost" id="dract" type="button">Activate</button><div id="drkm" class="subt" style="margin-top:6px"></div></div>';}
+ function wireKey(ctx){var hk=document.getElementById('drhk');if(hk)hk.addEventListener('click',function(e){e.preventDefault();var k=document.getElementById('drkb');if(k)k.style.display='block';});var a=document.getElementById('dract');if(a)a.addEventListener('click',function(){var k=(document.getElementById('drkey').value||'').trim();var m=document.getElementById('drkm');if(!k){m.textContent='Paste your key first.';return;}m.textContent='Checking...';fetch('/.netlify/functions/concierge',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({validateOnly:true,license:k})}).then(function(r){return r.json();}).then(function(v){if(v&&v.valid){setKey(k);m.textContent='Activated. Loading research...';setTimeout(function(){run(ctx.name,ctx.source);},400);}else{m.textContent='That key did not validate. Check it and try again.';}}).catch(function(){m.textContent='Could not check the key right now.';});});}
+ function run(name,source){
+  title.textContent=name||'Supplier research';
+  body.innerHTML='<p class="subt">Researching '+esc(name)+'...</p>';
+  modal.style.display='block';
+  fetch('/.netlify/functions/research',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name,source:source,license:key()})})
+   .then(function(r){return r.json();})
+   .then(function(d){
+     if(d.needsPro){ body.innerHTML=upsell(); wireKey({name:name,source:source}); return; }
+     if(d.error){ body.innerHTML='<p class="subt">'+esc(d.error)+'</p>'; return; }
+     var h='<div style="line-height:1.65;font-size:14px">'+md(d.brief||'')+'</div>';
+     if(source) h+='<p style="margin-top:16px"><a class="btn ghost" href="'+esc(source)+'" target="_blank" rel="noopener">Visit website &#8599;</a></p>';
+     body.innerHTML=h;
+   })
+   .catch(function(){ body.innerHTML='<p class="subt">Could not load research right now. If you just deployed, give it a minute and try again.</p>'; });
+ }
+ document.addEventListener('click',function(e){var b=e.target.closest?e.target.closest('.dr'):null;if(!b)return;e.preventDefault();run(b.getAttribute('data-n')||'',b.getAttribute('data-s')||'');});
+ document.getElementById('drclose').addEventListener('click',function(){modal.style.display='none';});
+ modal.addEventListener('click',function(e){if(e.target===modal)modal.style.display='none';});
 })();
 </script>
 

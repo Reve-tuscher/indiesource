@@ -3,7 +3,6 @@ const MODEL = "claude-haiku-4-5-20251001";
 
 function norm(s){ return (s||"").toString().toLowerCase(); }
 function pick(s){ return {name:s.name,type:s.type,hq:s.hq,region:s.region,moq:s.moq,certs:s.certs,source:s.source}; }
-
 function score(s, q){
   const hay = norm(s.name+" "+s.type+" "+s.region+" "+s.hq+" "+s.cats+" "+s.certs);
   let sc = 0;
@@ -22,32 +21,44 @@ function score(s, q){
   return sc;
 }
 
+async function licenseOk(license){
+  if(!license) return false;
+  const owner = process.env.OWNER_UNLOCK_CODE;
+  if(owner && license === owner) return true;
+  try{
+    const r = await fetch("https://api.lemonsqueezy.com/v1/licenses/validate",{method:"POST",headers:{"Accept":"application/json","Content-Type":"application/json"},body:JSON.stringify({license_key:license})});
+    const d = await r.json();
+    return !!(d && d.valid === true);
+  }catch(e){ return false; }
+}
+
 exports.handler = async function(event){
   const headers = {"Access-Control-Allow-Origin":"*","Access-Control-Allow-Headers":"Content-Type","Content-Type":"application/json"};
   if(event.httpMethod==="OPTIONS") return {statusCode:200, headers, body:"{}"};
-  let query="";
-  try{ query = (JSON.parse(event.body||"{}").query||"").toString().slice(0,500); }catch(e){}
+  let query="", license="", validateOnly=false;
+  try{ const b=JSON.parse(event.body||"{}"); query=(b.query||"").toString().slice(0,500); license=(b.license||"").toString().slice(0,200).trim(); validateOnly=!!b.validateOnly; }catch(e){}
+  if(validateOnly){ const ok=await licenseOk(license); return {statusCode:200, headers, body:JSON.stringify({valid:ok})}; }
   if(!query.trim()) return {statusCode:200, headers, body:JSON.stringify({answer:"Tell me what you want to make - e.g. 'vegan vitamin C serum, US-based, low minimum'.", picks:[]})};
   const q = norm(query);
   const ranked = SUPPLIERS.map(function(s){ return {s:s, sc:score(s,q)}; })
     .sort(function(a,b){ return (b.sc-a.sc) || ((b.s.low?1:0)-(a.s.low?1:0)); })
     .slice(0,24).map(function(x){ return x.s; });
+  const allowed = await licenseOk(license);
+  if(!allowed){
+    return {statusCode:200, headers, body:JSON.stringify({needsPro:true, answer:"The AI sourcing assistant is a Pro feature. Here is a free taste - the three closest matches. Go Pro ($19/month) to get tailored picks and reasoning for any request.", picks: ranked.slice(0,3).map(pick)})};
+  }
+  const apiKey=process.env.ANTHROPIC_API_KEY;
   const listText = ranked.map(function(s){ return "- "+s.name+" | "+s.type+" | "+s.region+" ("+s.hq+") | MOQ: "+s.moq+" | Certs: "+s.certs+" | low-min: "+(s.low?"yes":"no"); }).join("\n");
-  const apiKey = process.env.ANTHROPIC_API_KEY;
   if(!apiKey){
-    return {statusCode:200, headers, body:JSON.stringify({answer:"Demo mode: add your ANTHROPIC_API_KEY in Netlify to turn on real AI answers. Meanwhile, here are the closest matches from the directory for your request:", picks: ranked.slice(0,6).map(pick)})};
+    return {statusCode:200, headers, body:JSON.stringify({answer:"Demo mode: add your ANTHROPIC_API_KEY in Netlify to turn on real AI answers. Closest matches:", picks: ranked.slice(0,6).map(pick)})};
   }
   const SYS = "You are the IndieSource sourcing concierge for indie beauty founders (skincare, haircare, cosmetics). From the CANDIDATE SUPPLIERS provided, recommend the 3-6 best matches for the user's need. Be friendly and concrete, 130 words maximum. For each pick give a one-line reason (region, MOQ, certifications, or category fit). If a relevant field says 'Check with supplier', tell them to confirm it directly. Never invent suppliers or facts beyond the candidates given. Finish with one final line in exactly this format: PICKS: Name1; Name2; Name3 - using the exact candidate names you recommend.";
   const USER = "Founder's need: "+query+"\n\nCANDIDATE SUPPLIERS:\n"+listText;
   try{
-    const resp = await fetch("https://api.anthropic.com/v1/messages",{
-      method:"POST",
-      headers:{"x-api-key":apiKey,"anthropic-version":"2023-06-01","content-type":"application/json"},
-      body: JSON.stringify({model:MODEL, max_tokens:700, system:SYS, messages:[{role:"user", content:USER}]})
-    });
+    const resp = await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"x-api-key":apiKey,"anthropic-version":"2023-06-01","content-type":"application/json"},body: JSON.stringify({model:MODEL, max_tokens:700, system:SYS, messages:[{role:"user", content:USER}]})});
     const data = await resp.json();
     let text = (data && data.content && data.content[0] && data.content[0].text) ? data.content[0].text : "";
-    if(!text) return {statusCode:200, headers, body:JSON.stringify({answer:"The AI had trouble responding just now. Here are the closest matches:", picks: ranked.slice(0,6).map(pick)})};
+    if(!text) return {statusCode:200, headers, body:JSON.stringify({answer:"The AI had trouble responding. Closest matches:", picks: ranked.slice(0,6).map(pick)})};
     let picks=[];
     const m = text.match(/PICKS:\s*(.+)\s*$/im);
     if(m){
@@ -61,7 +72,5 @@ exports.handler = async function(event){
     }
     if(picks.length===0) picks = ranked.slice(0,6);
     return {statusCode:200, headers, body:JSON.stringify({answer:text, picks:picks.map(pick)})};
-  }catch(err){
-    return {statusCode:500, headers, body:JSON.stringify({answer:"Something went wrong reaching the AI. Please try again.", picks:[]})};
-  }
+  }catch(err){ return {statusCode:500, headers, body:JSON.stringify({answer:"Something went wrong reaching the AI. Please try again.", picks:[]})}; }
 };
