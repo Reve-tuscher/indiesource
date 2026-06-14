@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>IndieSource - Admin: Add / enrich supplier</title>
+<style>
+:root{--berry:#7a2e54;--berry2:#9d4b78;--bg:#fbf7f9;--ink:#2a2230;--mut:#6f6676;--line:#eadfe6;--card:#fff}
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--ink);line-height:1.5}
+.wrap{max-width:760px;margin:0 auto;padding:28px 20px}
+h1{font-size:24px;color:var(--berry);margin:0 0 4px}
+.sub{color:var(--mut);font-size:14px;margin:0 0 20px}
+label{display:block;font-size:13px;font-weight:600;margin:14px 0 5px}
+input,textarea{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:9px;font-size:14px;background:#fff;color:var(--ink);font-family:inherit}
+textarea{min-height:90px;resize:vertical}
+button{margin-top:16px;background:var(--berry);color:#fff;border:0;padding:12px 22px;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer}
+button:hover{background:var(--berry2)}
+.out{margin-top:22px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}
+.kv{display:flex;gap:10px;font-size:14px;padding:6px 0;border-bottom:1px solid var(--line)}
+.kv b{min-width:130px;color:var(--mut);font-weight:600}
+.copybar{margin-top:14px}
+.copybar textarea{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;min-height:54px}
+.cp{background:#fff;color:var(--berry);border:1px solid var(--berry);padding:8px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;margin-top:8px}
+.note{font-size:12px;color:var(--mut);margin-top:8px}
+.warn{font-size:12px;color:var(--mut);background:#f4e9f0;border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:18px}
+</style></head>
+<body><div class="wrap">
+<h1>Add / enrich a supplier</h1>
+<p class="sub">Paste a supplier's website and let AI draft the directory row. Confirm before you publish.</p>
+<div class="warn">Private tool - don't link this page publicly. For real protection, turn on Netlify password protection for the /admin path.</div>
+<label>Company name (optional)</label>
+<input id="name" type="text" placeholder="e.g. Acme Cosmetics Lab">
+<label>Website URL</label>
+<input id="url" type="url" placeholder="https://example.com">
+<label>Or paste page text (optional, if the site blocks fetching)</label>
+<textarea id="text" placeholder="Paste the supplier's About / private-label page text here"></textarea>
+<button id="go" type="button">Draft the row</button>
+<div class="out" id="out"></div>
+</div>
+<script>
+var go=document.getElementById('go'),out=document.getElementById('out');
+function esc(s){return (s||'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+go.addEventListener('click',function(){
+  var name=document.getElementById('name').value.trim();
+  var url=document.getElementById('url').value.trim();
+  var text=document.getElementById('text').value.trim();
+  if(!name && !url && !text){ out.innerHTML='<p class="note">Enter a name, URL, or pasted text first.</p>'; return; }
+  out.innerHTML='<p class="note">Reading the site and drafting&hellip;</p>';
+  fetch('/.netlify/functions/enrich',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name,url:url,text:text})})
+   .then(function(r){return r.json();})
+   .then(function(d){
+     if(d.error){ out.innerHTML='<p class="note">'+esc(d.error)+(d.raw?('<br><br>'+esc(d.raw)):'')+'</p>'; return; }
+     var r=d.row||{};
+     var fields=[['Company',r.name],['Type',r.type],['Region',r.region],['HQ country',r.hq],['Categories',r.categories],['Stated MOQ',r.moq],['Certifications',r.certs],['Low / no minimum',r.low_min],['Source',r.source]];
+     var html='<div class="card">';
+     fields.forEach(function(f){ html+='<div class="kv"><b>'+f[0]+'</b><span>'+esc(f[1]||'')+'</span></div>'; });
+     if(r.summary) html+='<p class="note">'+esc(r.summary)+'</p>';
+     var rowLine=[r.name,r.type,r.region,r.hq,r.categories,r.moq,r.certs,r.low_min].join('\t');
+     html+='<div class="copybar"><label>Paste row into the spreadsheet (starts at the Company column):</label><textarea id="rowline" readonly>'+esc(rowLine)+'</textarea><button class="cp" id="cpbtn" type="button">Copy row</button> <span class="note" id="cpmsg"></span></div>';
+     html+='</div>';
+     out.innerHTML=html;
+     document.getElementById('cpbtn').addEventListener('click',function(){
+       var ta=document.getElementById('rowline'); ta.select();
+       navigator.clipboard.writeText(ta.value).then(function(){document.getElementById('cpmsg').textContent='Copied. Paste into the Company cell of a new row.';});
+     });
+   })
+   .catch(function(){ out.innerHTML='<p class="note">The enrichment tool runs on the deployed site (with your API key). It can\'t run from a local file.</p>'; });
+});
+</script>
+</body></html>
